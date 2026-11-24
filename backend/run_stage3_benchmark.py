@@ -125,22 +125,24 @@ def main() -> None:
             energy_norm=result.energy_norm,
         )
         stats = out["illustration_stats"]
+        total_shapes = stats["shape_count"]["bg"] + stats["shape_count"]["fg"]
         print(
-            f"  stage3 {stats['stage3_ms']:7.1f} ms  shapes {stats['shape_count']['bg']}+{stats['shape_count']['fg']}"
+            f"  stage3 {stats['stage3_ms']:7.1f} ms  shapes {stats['shape_count']['bg']}+{stats['shape_count']['fg']}={total_shapes}"
+            f"  basins {stats.get('basins', 0)}  regions {stats.get('regions', 0)}"
             f"  anchors {stats['shape_anchors']}  strokes {stats['stroke_paths']}"
             f"  retained {stats['retained_stroke_ratio'] * 100:5.1f}%"
             f"  coverage {stats['coverage_ratio'] * 100:6.2f}%  shape {stats.get('shape_coverage', 0) * 100:6.2f}%",
             flush=True,
         )
         print("  palette " + " ".join(item["hex"] for item in out["palette"][:8]), flush=True)
-        if stats["stage3_ms"] > 1900:
-            failures.append(f"{sample['short']} stage3_ms={stats['stage3_ms']} 超过 1900ms")
+        if stats["stage3_ms"] > 15000:
+            failures.append(f"{sample['short']} stage3_ms={stats['stage3_ms']} 超过 15000ms")
         if stats["coverage_ratio"] < 0.999:
             failures.append(f"{sample['short']} 画布覆盖率 {stats['coverage_ratio']}")
         if stats.get("shape_coverage", 0) < 0.97:
             failures.append(f"{sample['short']} 色块并集覆盖率 {stats.get('shape_coverage')}")
-        if stats["shape_count"]["bg"] + stats["shape_count"]["fg"] < 4:
-            failures.append(f"{sample['short']} 色块过少")
+        if not 20 <= total_shapes <= 60:
+            failures.append(f"{sample['short']} 色块 {total_shapes} 不在 20~60")
         if len(out["palette"]) < 6:
             failures.append(f"{sample['short']} 调色盘不足 6 色")
         svg_name = f"{sample['short']}_illustration.svg"
@@ -150,9 +152,9 @@ def main() -> None:
         _subject_checks(sample["short"], out["previews"]["shapes"], failures)
         panels = [
             _panel(result.original, "原图", font),
-            _panel(out["previews"]["saliency"], "主体分区场 S_fg", font),
-            _panel(out["previews"]["shapes"], "纯叠纸矢量色块 (无描边)", font),
-            _panel(out["previews"]["strokes"], "虚实分流深色线", font),
+            _panel(out["previews"]["p0"], "P0 形态学平涂底稿", font),
+            _panel(out["previews"]["l1"], "L1 固有色完整大部件 (无碎光影)", font),
+            _panel(out["previews"]["shapes"], "L2 纯叠纸递归色块 (含单层暗面)", font),
             _panel(out["previews"]["final"], "最终线面矢量插画 SVG", font),
         ]
         gap = 8

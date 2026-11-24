@@ -199,6 +199,9 @@ export interface Stage3Params {
   show_bg_shapes: boolean
   show_fg_shapes: boolean
   show_strokes: boolean
+  dust_scale: number
+  albedo_group: number
+  shade_threshold: number
 }
 
 export interface PaletteSwatch {
@@ -235,9 +238,13 @@ export interface IllustrationResult {
   svg_url: string
   filename: string
   images: {
-    saliency_map: string
-    flat_regions: string
-    routed_strokes: string
+    p0_flat: string
+    l0_layout: string
+    l1_parts: string
+    l2_final: string
+    saliency_map?: string
+    flat_regions?: string
+    routed_strokes?: string
   }
   palette: PaletteSwatch[]
   illustration_stats: IllustrationStats

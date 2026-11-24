@@ -13,6 +13,9 @@ export const DEFAULT_STAGE3: Stage3Params = {
   show_bg_shapes: true,
   show_fg_shapes: true,
   show_strokes: true,
+  dust_scale: 1,
+  albedo_group: 0.4,
+  shade_threshold: 0.13,
 }
 
 export function illustrationLine(stats: IllustrationStats) {
@@ -170,7 +173,7 @@ export function Stage3Panel({
     <>
       <section className="group">
         <h3>矢量插画成稿</h3>
-        <p className="hint">无 AI 分区、以线筑坝和叠纸补缝。换线色或图层开关会走缓存，不重跑提线。</p>
+        <p className="hint">形态学平涂后再按 L0 剪影、L1 固有色、L2 点睛与单层暗面递归取块。图层开关只改显示，不重新计算。</p>
         <div className="palette-row" title="当前插画调色盘">
           {palette.length === 0 && <span className="hint">色卡会在成稿完成后出现</span>}
           {palette.map((swatch) => (
@@ -196,6 +199,33 @@ export function Stage3Panel({
           </select>
         </label>
         <Range
+          label="蒙尘拔除力度"
+          hint="P0 面积开闭的力度。越大，水泥麻点、反光白点和网点拔得越干净。"
+          min={0.3}
+          max={2.2}
+          step={0.05}
+          value={params.dust_scale}
+          onChange={(value) => onChange({ dust_scale: value })}
+        />
+        <Range
+          label="抗光影聚拢度"
+          hint="越高越无视明暗，把受光和阴影收成同一块固有色。默认 0.40，对应明度权重 0.20。"
+          min={0.1}
+          max={0.5}
+          step={0.01}
+          value={params.albedo_group}
+          onChange={(value) => onChange({ albedo_group: value })}
+        />
+        <Range
+          label="块内二分阴影门槛"
+          hint="L2 在每个大部件里最多切一块暗面。拉到最大就变成纯平涂、不再分阴影。"
+          min={0.06}
+          max={0.3}
+          step={0.01}
+          value={params.shade_threshold}
+          onChange={(value) => onChange({ shade_threshold: value })}
+        />
+        <Range
           label="调色盘色数"
           hint="主体加权归纳出的插画色卡数量。"
           min={6}
@@ -206,7 +236,7 @@ export function Stage3Panel({
         />
         <Range
           label="背景概括力度"
-          hint="越大，砖墙、石廊、天空越容易收成少数大色块。"
+          hint="越大，背景越少、越大块。砖墙、天空和海面会收成几块干净平涂。"
           min={0.04}
           max={0.18}
           step={0.005}
@@ -214,8 +244,8 @@ export function Stage3Panel({
           onChange={(value) => onChange({ bg_simplify: value })}
         />
         <Range
-          label="主体精细度"
-          hint="这是主体色差合并门槛。数值越小，五官和点睛色切得越细。"
+          label="主体部件精细度"
+          hint="越小，主体里的固有色部件越多。脸、衣服、手臂会各自保持完整，而不是按光影切开。"
           min={0.012}
           max={0.07}
           step={0.002}
@@ -223,8 +253,8 @@ export function Stage3Panel({
           onChange={(value) => onChange({ fg_detail: value })}
         />
         <Range
-          label="色块几何概括度"
-          hint="贝塞尔拟合容差。越大，每个色块的锚点越少。"
+          label="色块曲线概括容差"
+          hint="贝塞尔拟合容差。越大，每个色块的锚点越少、边缘越利落。"
           min={0.8}
           max={6}
           step={0.1}

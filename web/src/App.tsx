@@ -83,6 +83,8 @@ export default function App() {
   const [tint, setTint] = useState<InkTint>("magenta")
   const [transform, setTransform] = useState({ x: 40, y: 40, s: 1 })
   const [pending, setPending] = useState(false)
+  const [autoRun, setAutoRun] = useState(false)
+  const [settledSig, setSettledSig] = useState("")
   const [error, setError] = useState("")
   const [dropping, setDropping] = useState(false)
   const [advanced, setAdvanced] = useState(false)
@@ -91,7 +93,12 @@ export default function App() {
   const microRef = useRef<MicroscopeHandle>(null)
   const probeRef = useRef<HTMLSpanElement>(null)
   const psCache = useRef<Map<string, string>>(new Map())
-  const heavyStamp = useRef("")
+  const abortRef = useRef<AbortController | null>(null)
+  const timerRef = useRef<number | null>(null)
+  const holdRef = useRef(false)
+  const phaseStampRef = useRef("")
+  const seenSigRef = useRef("")
+  const runRef = useRef<() => Promise<void>>(async () => {})
 
   const sample = samples.find((item) => item.id === imageId) ?? null
   const effectiveParams = useMemo(() => {
@@ -111,7 +118,7 @@ export default function App() {
         if (cancelled) return
         setSamples(nextSamples)
         setPresets(nextPresets)
-        if (nextSamples[0]) setImageId(nextSamples[0].id)
+        if (nextSamples[0]) selectImage(nextSamples[0].id)
       })
       .catch((reason: unknown) => {
         setError(reason instanceof Error ? reason.message : "后端未连接")
@@ -121,42 +128,175 @@ export default function App() {
     }
   }, [])
 
-  const requestKey =
-    mode === "auto" ? `auto:${imageId}` : `${imageId}:${effectiveParams ? JSON.stringify(effectiveParams) : ""}`
+  const signature = useMemo(() => {
+    if (!imageId) return ""
+    if (mode !== "auto" && !effectiveParams) return ""
+    const phase = mode === "auto" ? `auto:${imageId}` : `${imageId}:${JSON.stringify(effectiveParams)}`
+    const stage3Compute = {
+      palette_k: stage3.palette_k,
+      bg_simplify: stage3.bg_simplify,
+      fg_detail: stage3.fg_detail,
+      shape_fit_tol: stage3.shape_fit_tol,
+      solid_line_gate: stage3.solid_line_gate,
+      line_color_mode: stage3.line_color_mode,
+      dust_scale: stage3.dust_scale,
+      albedo_group: stage3.albedo_group,
+      shade_threshold: stage3.shade_threshold,
+    }
+    if (stage === 1) return `s1|${phase}`
+    if (stage === 2) return `s2|${phase}|${JSON.stringify(stage2)}`
+    return `s3|${phase}|${JSON.stringify(stage2)}|${JSON.stringify(stage3Compute)}`
+  }, [imageId, mode, effectiveParams, stage, stage2, stage3])
+  const dirty = signature !== "" && signature !== settledSig
+  const busy = pending || pending2 || pending3
+  const liveRef = useRef({
+    imageId,
+    mode,
+    effectiveParams,
+    stage,
+    stage2,
+    stage3,
+    result,
+    vector,
+    illustration,
+    signature,
+  })
+  liveRef.current = {
+    imageId,
+    mode,
+    effectiveParams,
+    stage,
+    stage2,
+    stage3,
+    result,
+    vector,
+    illustration,
+    signature,
+  }
+  runRef.current = async () => {
+    const snap = liveRef.current
+    if (!snap.imageId || !snap.signature) return
+    if (snap.mode !== "auto" && !snap.effectiveParams) return
+    const sig = snap.signature
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const signal = controller.signal
+    setError("")
+    try {
+      const phaseStamp =
+        snap.mode === "auto" ? `auto:${snap.imageId}` : `${snap.imageId}:${JSON.stringify(snap.effectiveParams)}`
+      let phaseParams = snap.mode === "auto" ? (snap.result?.image_id === snap.imageId ? snap.result.params : null) : snap.effectiveParams
+      const phaseResult = snap.result && snap.result.image_id === snap.imageId ? snap.result : null
+      const needExtract = snap.stage === 1 || !phaseResult || phaseStampRef.current !== phaseStamp
+      if (needExtract) {
+        setPending(true)
+        const payload = await extractLines(
+          snap.imageId,
+          snap.mode === "auto" ? { preset: "auto" } : (snap.effectiveParams as Phase1Params),
+          { autoMode: snap.mode === "auto", signal },
+        )
+        if (signal.aborted) return
+        phaseParams = payload.params
+        setResult(payload)
+        if (payload.diagnosis) setDiagnosis(payload.diagnosis)
+        if (snap.mode === "auto") setParams(payload.params)
+        phaseStampRef.current = phaseStamp
+        setPending(false)
+      }
+      if (signal.aborted || !phaseParams) return
+      if (snap.stage === 2) {
+        setPending2(true)
+        const payload = await vectorizeImage(snap.imageId, phaseParams, snap.stage2, signal)
+        if (signal.aborted) return
+        setVector(payload)
+      } else if (snap.stage === 3) {
+        setPending3(true)
+        const payload = await illustrateImage(snap.imageId, phaseParams, snap.stage2, snap.stage3, signal)
+        if (signal.aborted) return
+        setIllustration(payload)
+      }
+      if (!signal.aborted) setSettledSig(sig)
+    } catch (reason: unknown) {
+      if (signal.aborted || (reason instanceof DOMException && reason.name === "AbortError")) return
+      setError(reason instanceof Error ? reason.message : "计算失败")
+    } finally {
+      if (abortRef.current === controller) {
+        setPending(false)
+        setPending2(false)
+        setPending3(false)
+      }
+    }
+  }
 
   useEffect(() => {
     if (!imageId) return
-    if (mode !== "auto" && !effectiveParams) return
-    const heavy = mode === "auto" ? `auto:${imageId}` : heavySignature(effectiveParams as Phase1Params)
-    const delay = heavyStamp.current === heavy ? 16 : 110
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => {
-      if (mode !== "auto") heavyStamp.current = heavy
-      setPending(true)
-      const sending = mode === "auto" ? { preset: "auto" } : (effectiveParams as Phase1Params)
-      extractLines(imageId, sending, { autoMode: mode === "auto", signal: controller.signal })
-        .then((payload) => {
-          setResult(payload)
-          if (payload.diagnosis) setDiagnosis(payload.diagnosis)
-          if (mode === "auto") {
-            setParams(payload.params)
-            heavyStamp.current = heavySignature(payload.params)
-          }
-          setError("")
-        })
-        .catch((reason: unknown) => {
-          if (reason instanceof DOMException && reason.name === "AbortError") return
-          setError(reason instanceof Error ? reason.message : "提取失败")
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setPending(false)
-        })
-    }, delay)
+    const snap = liveRef.current
+    if (snap.mode !== "auto" && !snap.effectiveParams) return
+    const ready =
+      stage === 1
+        ? snap.result?.image_id === imageId
+        : stage === 2
+          ? snap.vector?.image_id === imageId
+          : snap.illustration?.image_id === imageId
+    if (ready) return
+    void runRef.current()
     return () => {
-      window.clearTimeout(timer)
-      controller.abort()
+      abortRef.current?.abort()
     }
-  }, [requestKey, mode, effectiveParams, imageId])
+  }, [stage, imageId])
+
+  useEffect(() => {
+    if (!autoRun || !signature) return
+    if (seenSigRef.current !== signature) {
+      if (seenSigRef.current) holdRef.current = false
+      seenSigRef.current = signature
+    }
+    if (holdRef.current || signature === settledSig) return
+    const timer = window.setTimeout(() => {
+      void runRef.current()
+    }, 160)
+    timerRef.current = timer
+    return () => window.clearTimeout(timer)
+  }, [autoRun, signature, settledSig])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.repeat || !(event.metaKey || event.ctrlKey)) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA") && (target as HTMLInputElement).type !== "range") return
+      event.preventDefault()
+      holdRef.current = false
+      void runRef.current()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
+  function startCompute() {
+    holdRef.current = false
+    void runRef.current()
+  }
+
+  function stopCompute() {
+    holdRef.current = true
+    if (timerRef.current) window.clearTimeout(timerRef.current)
+    abortRef.current?.abort()
+    abortRef.current = null
+    setPending(false)
+    setPending2(false)
+    setPending3(false)
+  }
+
+  function selectImage(id: string) {
+    if (id === imageId) return
+    setImageId(id)
+    setResult((current) => (current?.image_id === id ? current : null))
+    setVector((current) => (current?.image_id === id ? current : null))
+    setIllustration((current) => (current?.image_id === id ? current : null))
+    setSettledSig("")
+    phaseStampRef.current = ""
+  }
 
   useEffect(() => {
     if (!imageId || presets.length === 0) return
@@ -180,60 +320,6 @@ export default function App() {
       cancelled = true
     }
   }, [imageId, presets])
-
-  const phaseKey = result ? JSON.stringify(result.params) : ""
-  const lineKey = result?.images.final_line ?? ""
-  const stageKey = JSON.stringify(stage2)
-
-  useEffect(() => {
-    if (stage !== 2 || !imageId || !result || result.image_id !== imageId) return
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => {
-      setPending2(true)
-      vectorizeImage(imageId, result.params, stage2, controller.signal)
-        .then((payload) => {
-          setVector(payload)
-          setError("")
-        })
-        .catch((reason: unknown) => {
-          if (reason instanceof DOMException && reason.name === "AbortError") return
-          setError(reason instanceof Error ? reason.message : "矢量化失败")
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setPending2(false)
-        })
-    }, 80)
-    return () => {
-      window.clearTimeout(timer)
-      controller.abort()
-    }
-  }, [stage, imageId, phaseKey, stageKey, lineKey])
-
-  const stage3Key = JSON.stringify(stage3)
-
-  useEffect(() => {
-    if (stage !== 3 || !imageId || !result || result.image_id !== imageId) return
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => {
-      setPending3(true)
-      illustrateImage(imageId, result.params, stage2, stage3, controller.signal)
-        .then((payload) => {
-          setIllustration(payload)
-          setError("")
-        })
-        .catch((reason: unknown) => {
-          if (reason instanceof DOMException && reason.name === "AbortError") return
-          setError(reason instanceof Error ? reason.message : "插画生成失败")
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setPending3(false)
-        })
-    }, 90)
-    return () => {
-      window.clearTimeout(timer)
-      controller.abort()
-    }
-  }, [stage, imageId, phaseKey, stageKey, stage3Key, lineKey, result, stage2, stage3])
 
   useEffect(() => {
     const node = viewportRef.current
@@ -308,7 +394,7 @@ export default function App() {
     try {
       const created = await uploadImage(file)
       setSamples((current) => [created, ...current.filter((item) => item.id !== created.id)])
-      setImageId(created.id)
+      selectImage(created.id)
       setError("")
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "上传失败")
@@ -361,9 +447,10 @@ export default function App() {
       }
       if (view3 === "quad" && illustration) {
         const cells = [
-          ["① 无AI主体分区场 S_fg", illustration.images.saliency_map],
-          ["② 以线筑坝色块分割", illustration.images.flat_regions],
-          ["③ 虚实分流深色线", illustration.images.routed_strokes],
+          ["P0 形态学蒙尘平涂", illustration.images.p0_flat],
+          ["L0 背景大块 + 主体总剪影", illustration.images.l0_layout],
+          ["L1 主体完整固有色部件", illustration.images.l1_parts],
+          ["L2 递归色块 + 二分明暗 + 线稿", illustration.images.l2_final],
         ] as const
         return (
           <div className="grid2" style={{ width: width * 2 + 8, height: height * 2 + 8 }}>
@@ -373,10 +460,6 @@ export default function App() {
                 <span>{title}</span>
               </div>
             ))}
-            <div className="cell" style={{ width, height }}>
-              {svg ? <SvgFrame svg={svg} /> : null}
-              <span>④ 最终矢量插画成稿</span>
-            </div>
           </div>
         )
       }
@@ -507,6 +590,18 @@ export default function App() {
           <strong>Photo2Vector</strong>
           <span>{stage === 1 ? "阶段一 · 线稿实验台" : stage === 2 ? "阶段二 · 矢量线稿" : "阶段三 · 矢量插画"}</span>
         </div>
+        <div className="runbar" role="group" aria-label="计算启停">
+          <button type="button" className={dirty && !busy ? "run hot" : "run"} disabled={busy || !imageId} onClick={startCompute}>
+            {busy ? "计算中…" : dirty ? "▶ 开始计算 (参数已变更)" : "▶ 开始计算"}
+          </button>
+          <button type="button" className={busy ? "stop on" : "stop"} disabled={!busy} onClick={stopCompute}>
+            ⏹ 停止
+          </button>
+          <label className={autoRun ? "auto-toggle on" : "auto-toggle"} title="关掉时改完参数再点开始。打开后滑块会连续重算。">
+            <input type="checkbox" checked={autoRun} onChange={(event) => setAutoRun(event.target.checked)} />
+            <span>⚡ 自动重算</span>
+          </label>
+        </div>
         <div className="stage-switch" role="tablist">
           <button type="button" className={stage === 1 ? "on" : ""} onClick={() => setStage(1)}>
             ① 位图提线
@@ -524,7 +619,7 @@ export default function App() {
               key={item.id}
               className={item.id === imageId ? "thumb on" : "thumb"}
               title={item.scene}
-              onClick={() => setImageId(item.id)}
+              onClick={() => selectImage(item.id)}
               type="button"
             >
               <img src={item.thumb_url} alt={item.short} />
@@ -651,7 +746,7 @@ export default function App() {
                 [
                   ["svg", "插画成稿 (SVG)"],
                   ["wipe", "原图 vs 插画卷帘"],
-                  ["quad", "叠纸解剖四宫格"],
+                  ["quad", "递归分层四步透视"],
                   ["micro", "色块锚点显微镜 (Paper.js)"],
                 ] as const
               ).map(([id, label]) => (
@@ -1109,15 +1204,6 @@ function DiagnosisCard({ diagnosis, manual }: { diagnosis: Diagnosis; manual: bo
       </ul>
     </section>
   )
-}
-
-function heavySignature(params: Phase1Params) {
-  const rest: Partial<Phase1Params> = { ...params }
-  delete rest.shadow_weight
-  delete rest.mid_weight
-  delete rest.highlight_weight
-  delete rest.band_blend_mode
-  return JSON.stringify(rest)
 }
 
 function stageBox(view: ViewMode, width: number, height: number) {

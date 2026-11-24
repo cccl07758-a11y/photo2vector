@@ -441,8 +441,12 @@ def illustrate_api(body: IllustrateBody):
             _SVG_CACHE.popitem(last=False)
         preview_key = hashlib.sha1((svg_key + ":preview").encode("utf-8")).hexdigest()[:20]
         images = {
-            "saliency_map": _png_url(preview_key + "-sal", illustrated["previews"]["saliency"]),
-            "flat_regions": _png_url(preview_key + "-flat", illustrated["previews"]["flat"]),
+            "p0_flat": _png_url(preview_key + "-p0", illustrated["previews"]["p0"]),
+            "l0_layout": _png_url(preview_key + "-l0", illustrated["previews"]["l0"]),
+            "l1_parts": _png_url(preview_key + "-l1", illustrated["previews"]["l1"]),
+            "l2_final": _png_url(preview_key + "-l2", illustrated["previews"]["final"]),
+            "saliency_map": _png_url(preview_key + "-sal", illustrated["previews"]["l0"]),
+            "flat_regions": _png_url(preview_key + "-flat", illustrated["previews"]["l1"]),
             "routed_strokes": _png_url(preview_key + "-strokes", illustrated["previews"]["strokes"]),
         }
     return {

@@ -117,6 +117,51 @@ img { display: block; max-width: none; }
   font-weight: 650;
 }
 .export:disabled { opacity: 0.4; cursor: default; }
+.runbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0e1014;
+}
+.runbar .run, .runbar .stop, .auto-toggle {
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.runbar .run {
+  background: #2a2418;
+  color: var(--text);
+  font-weight: 650;
+}
+.runbar .run.hot {
+  color: #1a1408;
+  background: var(--accent);
+  animation: breath 1.35s ease-in-out infinite;
+}
+.runbar .run:disabled, .runbar .stop:disabled { opacity: 0.45; cursor: default; animation: none; }
+.runbar .stop.on {
+  background: #8d2438;
+  color: #fff5f7;
+  opacity: 1;
+}
+.auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.auto-toggle.on { color: var(--ok); }
+.auto-toggle input { accent-color: var(--ok); }
+@keyframes breath {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(226, 177, 90, 0.55); }
+  50% { box-shadow: 0 0 0 7px rgba(226, 177, 90, 0); }
+}
 .stage-switch {
   display: flex;
   padding: 3px;

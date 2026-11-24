@@ -11,8 +11,7 @@ import numpy as np
 
 from stage3.edge_routing import dam_polylines, measure, select, stroke_hex
 from stage3.paperstack import assemble, build_shapes, rasterize
-from stage3.rag_palette import build as build_partition
-from stage3.rag_palette import flat_rgb
+from stage3.recursive_ucm import build as build_partition
 from stage3.saliency import compute as compute_saliency
 
 DEFAULTS = {
@@ -25,6 +24,9 @@ DEFAULTS = {
     "show_bg_shapes": True,
     "show_fg_shapes": True,
     "show_strokes": True,
+    "dust_scale": 1.0,
+    "albedo_group": 0.40,
+    "shade_threshold": 0.13,
 }
 
 _RANGES = {
@@ -33,6 +35,9 @@ _RANGES = {
     "fg_detail": (0.008, 0.09),
     "shape_fit_tol": (0.6, 6.0),
     "solid_line_gate": (0.0, 0.75),
+    "dust_scale": (0.2, 2.8),
+    "albedo_group": (0.10, 0.50),
+    "shade_threshold": (0.06, 0.30),
 }
 
 _LOCK = threading.Lock()
@@ -87,7 +92,9 @@ def illustrate(
     measured, hits["routing"] = _routing(paths, lab, saliency, (disp_w, disp_h), source_key, paths_key)
     routing_ms = (time.perf_counter() - t0) * 1000.0
     t0 = time.perf_counter()
-    partition, hits["regions"] = _regions(lab, saliency, measured, user, source_key, paths_key, (work_w, work_h))
+    partition, hits["regions"] = _regions(
+        lab, saliency, measured, user, source_key, paths_key, (work_w, work_h), energy_norm
+    )
     region_ms = (time.perf_counter() - t0) * 1000.0
     t0 = time.perf_counter()
     shapes, ground, shape_stats, hits["geometry"] = _geometry(
@@ -122,7 +129,9 @@ def illustrate(
         final_rgb, _covered = rasterize([], visible, (disp_w, disp_h), ground, draw_shapes=False, draw_strokes=bool(visible), paper=True)
     stroke_rgb, _ignored = rasterize([], visible, (disp_w, disp_h), ground, draw_shapes=False, draw_strokes=True, paper=True)
     heat = _heatmap(saliency, (disp_w, disp_h))
-    flat = cv2.resize(flat_rgb(partition), (disp_w, disp_h), interpolation=cv2.INTER_NEAREST)
+    p0 = _fit_preview(partition["previews"]["p0"], (disp_w, disp_h), nearest=False)
+    l0 = _fit_preview(partition["previews"]["l0"], (disp_w, disp_h), nearest=True)
+    l1 = _fit_preview(partition["previews"]["l1"], (disp_w, disp_h), nearest=True)
     elapsed = (time.perf_counter() - started) * 1000.0
     total_paths = max(len(measured), 1)
     retained = len(kept) / total_paths if measured else 0.0
@@ -139,6 +148,8 @@ def illustrate(
         "stage3_ms": round(elapsed, 2),
         "primary_strokes": sum(1 for item in kept if item["paint_tier"] == "primary"),
         "secondary_strokes": sum(1 for item in kept if item["paint_tier"] != "primary"),
+        "basins": int(partition.get("basins", 0)),
+        "regions": int(partition.get("region_count", 0)),
     }
     return {
         "svg_text": svg,
@@ -147,7 +158,10 @@ def illustrate(
         "shapes": shapes,
         "previews": {
             "saliency": heat,
-            "flat": flat,
+            "p0": p0,
+            "l0": l0,
+            "l1": l1,
+            "flat": l1,
             "strokes": stroke_rgb,
             "shapes": shapes_rgb,
             "final": final_rgb,
@@ -165,7 +179,7 @@ def illustrate(
     }
 
 
-def _work_size(width: int, height: int, longest: int = 768) -> tuple[int, int]:
+def _work_size(width: int, height: int, longest: int = 896) -> tuple[int, int]:
     long_side = max(width, height)
     if long_side <= longest:
         return width, height
@@ -209,22 +223,34 @@ def _routing(paths, lab, saliency, display_size, source_key: str, paths_key: str
     return measured, False
 
 
-def _regions(lab, saliency, measured, params, source_key: str, paths_key: str, work_size: tuple[int, int]):
-    key = (
-        source_key,
-        paths_key,
-        work_size,
+def _partition_key(params: dict) -> tuple:
+    return (
         round(float(params["bg_simplify"]), 4),
         round(float(params["fg_detail"]), 4),
         int(params["palette_k"]),
+        round(float(params["dust_scale"]), 4),
+        round(float(params["albedo_group"]), 4),
+        round(float(params["shade_threshold"]), 4),
     )
+
+
+def _regions(lab, saliency, measured, params, source_key: str, paths_key: str, work_size: tuple[int, int], energy_norm):
+    key = (source_key, paths_key, work_size, *_partition_key(params))
     if source_key and paths_key:
         with _LOCK:
             found = _REGION.get(key)
             if found is not None:
                 _REGION.move_to_end(key)
                 return found, True
-    partition = build_partition(lab, saliency, dam_polylines(measured), params)
+    token = (source_key, paths_key, work_size, round(float(params["dust_scale"]), 4)) if source_key and paths_key else None
+    partition = build_partition(
+        lab,
+        saliency,
+        dam_polylines(measured),
+        params,
+        energy_norm=energy_norm,
+        cache_token=token,
+    )
     if source_key and paths_key:
         with _LOCK:
             _REGION[key] = partition
@@ -240,9 +266,7 @@ def _geometry(partition, params, display_size, source_key: str, paths_key: str, 
         paths_key,
         work_size,
         display_size,
-        round(float(params["bg_simplify"]), 4),
-        round(float(params["fg_detail"]), 4),
-        int(params["palette_k"]),
+        *_partition_key(params),
         round(float(params["shape_fit_tol"]), 3),
     )
     if source_key and paths_key:
@@ -259,6 +283,14 @@ def _geometry(partition, params, display_size, source_key: str, paths_key: str, 
             while len(_GEOM) > _LIMIT:
                 _GEOM.popitem(last=False)
     return shapes, ground, stats, False
+
+
+def _fit_preview(rgb: np.ndarray, size: tuple[int, int], nearest: bool) -> np.ndarray:
+    width, height = size
+    if rgb.shape[1] == width and rgb.shape[0] == height:
+        return np.ascontiguousarray(rgb)
+    interp = cv2.INTER_NEAREST if nearest else cv2.INTER_AREA if rgb.shape[1] > width else cv2.INTER_LINEAR
+    return cv2.resize(rgb, (width, height), interpolation=interp)
 
 
 def _heatmap(saliency: np.ndarray, size: tuple[int, int]) -> np.ndarray:
