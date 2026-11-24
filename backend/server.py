@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from pipeline import StageCache, get_diagnosis, load_rgb, public_diagnosis, resize_max, run_phase1
 from presets import ROOT, SAMPLES, merge_params, preset_payloads
 from stage2 import vectorize as run_vectorize
+from stage3 import illustrate as run_illustrate
 
 HOST = "127.0.0.1"
 PORT = 8765
@@ -51,6 +52,14 @@ class VectorizeBody(BaseModel):
     params: dict = Field(default_factory=dict)
     auto_mode: bool = False
     stage2: dict = Field(default_factory=dict)
+
+
+class IllustrateBody(BaseModel):
+    image_id: str
+    params: dict = Field(default_factory=dict)
+    auto_mode: bool = False
+    stage2: dict = Field(default_factory=dict)
+    stage3: dict = Field(default_factory=dict)
 
 
 def _builtin_path(image_id: str) -> Path | None:
@@ -295,6 +304,13 @@ def _vector_filename(image_id: str) -> str:
     return "上传_vector_stage2.svg"
 
 
+def _illustration_filename(image_id: str) -> str:
+    for sample in SAMPLES:
+        if sample["id"] == image_id:
+            return f"{sample['short']}_illustration.svg"
+    return "上传_illustration.svg"
+
+
 @app.post("/api/stage2/vectorize")
 def vectorize_api(body: VectorizeBody):
     with _LOCK:
@@ -317,6 +333,8 @@ def vectorize_api(body: VectorizeBody):
             found = {
                 "ink": result.ink,
                 "oklab": result.oklab,
+                "energy_norm": result.energy_norm,
+                "w_tex": diag.get("w_tex_256"),
                 "width": int(result.stats["width"]),
                 "height": int(result.stats["height"]),
             }
@@ -353,6 +371,98 @@ def vectorize_api(body: VectorizeBody):
         },
         "cache": {"phase1": phase_ms == 0.0},
         "params": out["params"],
+    }
+
+
+@app.post("/api/stage3/illustrate")
+def illustrate_api(body: IllustrateBody):
+    with _LOCK:
+        rgb = _load_cached(body.image_id)
+        token = _image_token(body.image_id, rgb)
+        diag = get_diagnosis(rgb, token)
+        params = _resolve_extract_params(
+            ExtractBody(image_id=body.image_id, params=body.params, auto_mode=body.auto_mode),
+            diag,
+        )
+        key = _source_key(token, params)
+        found = _SOURCE_CACHE.get(key)
+        phase_ms = 0.0
+        if found is None:
+            started = time.perf_counter()
+            result = run_phase1(rgb, params, cache=_STAGE_CACHE, token=token, diagnosis=diag)
+            phase_ms = (time.perf_counter() - started) * 1000.0
+            if result.ink is None or result.oklab is None:
+                raise HTTPException(500, "阶段一没有留下可矢量化的墨线")
+            found = {
+                "ink": result.ink,
+                "oklab": result.oklab,
+                "energy_norm": result.energy_norm,
+                "w_tex": diag.get("w_tex_256"),
+                "width": int(result.stats["width"]),
+                "height": int(result.stats["height"]),
+            }
+            _SOURCE_CACHE[key] = found
+            _SOURCE_CACHE.move_to_end(key)
+            while len(_SOURCE_CACHE) > 4:
+                _SOURCE_CACHE.popitem(last=False)
+        else:
+            _SOURCE_CACHE.move_to_end(key)
+        stage2_started = time.perf_counter()
+        vector = run_vectorize(
+            found["ink"],
+            found["oklab"],
+            body.stage2,
+            (found["width"], found["height"]),
+            source_key=key,
+        )
+        stage2_ms = (time.perf_counter() - stage2_started) * 1000.0
+        paths_blob = json.dumps({"src": key, "stage2": vector["params"]}, sort_keys=True, default=str)
+        paths_key = hashlib.sha1(paths_blob.encode("utf-8")).hexdigest()[:20]
+        illustrated = run_illustrate(
+            found["oklab"],
+            vector["vector_data"]["paths"],
+            body.stage3,
+            display_size=(found["width"], found["height"]),
+            source_key=key,
+            paths_key=paths_key,
+            w_tex=found.get("w_tex"),
+            energy_norm=found.get("energy_norm"),
+        )
+        filename = _illustration_filename(body.image_id)
+        svg_blob = json.dumps(
+            {"src": key, "paths": paths_key, "stage3": illustrated["params"]},
+            sort_keys=True,
+            default=str,
+        )
+        svg_key = hashlib.sha1(svg_blob.encode("utf-8")).hexdigest()[:20]
+        _SVG_CACHE[svg_key] = (filename, illustrated["svg_text"])
+        _SVG_CACHE.move_to_end(svg_key)
+        while len(_SVG_CACHE) > 24:
+            _SVG_CACHE.popitem(last=False)
+        preview_key = hashlib.sha1((svg_key + ":preview").encode("utf-8")).hexdigest()[:20]
+        images = {
+            "saliency_map": _png_url(preview_key + "-sal", illustrated["previews"]["saliency"]),
+            "flat_regions": _png_url(preview_key + "-flat", illustrated["previews"]["flat"]),
+            "routed_strokes": _png_url(preview_key + "-strokes", illustrated["previews"]["strokes"]),
+        }
+    return {
+        "image_id": body.image_id,
+        "svg_text": illustrated["svg_text"],
+        "svg_url": f"/api/cache/{svg_key}.svg",
+        "filename": filename,
+        "images": images,
+        "palette": illustrated["palette"],
+        "illustration_stats": illustrated["illustration_stats"],
+        "shapes": illustrated["shapes"],
+        "size": illustrated["size"],
+        "timings_ms": {
+            "stage3": illustrated["illustration_stats"]["stage3_ms"],
+            "stage2": round(stage2_ms, 2),
+            "phase1": round(phase_ms, 2),
+            **illustrated["timings_ms"],
+        },
+        "cache": {"phase1": phase_ms == 0.0, **illustrated["cache"]},
+        "params": illustrated["params"],
     }
 
 

@@ -41,6 +41,7 @@ class Phase1Result:
     band_images: dict | None = None
     ink: np.ndarray | None = None
     oklab: np.ndarray | None = None
+    energy_norm: np.ndarray | None = None
     vector_scale: tuple[float, float] = (1.0, 1.0)
 
 
@@ -220,6 +221,16 @@ def _apply_multiband(result: Phase1Result, multi, started: float, cached_single:
             (multi.ink.shape[1], multi.ink.shape[0]),
             interpolation=cv2.INTER_LINEAR,
         )
+    if (
+        result.energy_norm is not None
+        and result.oklab is not None
+        and result.energy_norm.shape[:2] != result.oklab.shape[:2]
+    ):
+        result.energy_norm = cv2.resize(
+            result.energy_norm,
+            (result.oklab.shape[1], result.oklab.shape[0]),
+            interpolation=cv2.INTER_LINEAR,
+        )
     if multi.ink is not None and multi.ink.size:
         result.vector_scale = (
             float(result.original.shape[1]) / float(multi.ink.shape[1]),
@@ -375,6 +386,7 @@ def _run_core(
         diagnosis=public_diagnosis(diag),
         ink=final_ink,
         oklab=oklab,
+        energy_norm=np.ascontiguousarray(fields.energy_norm, dtype=np.float32),
         vector_scale=(1.0, 1.0),
     )
 

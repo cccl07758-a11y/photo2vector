@@ -106,7 +106,9 @@ export interface ExtractImages {
   color_bands?: string
 }
 
-export type StageMode = 1 | 2
+export type StageMode = 1 | 2 | 3
+export type Stage3View = "svg" | "wipe" | "quad" | "micro"
+export type LineColorMode = "colored" | "black" | "none"
 export type Stage2View = "svg" | "micro" | "wipe" | "overlay"
 export type RenderStyle = "center" | "taper"
 export type AnchorKind = "endpoint" | "smooth" | "cusp"
@@ -185,6 +187,65 @@ export interface VectorizeResult {
   timings_ms: { stage2: number; phase1: number }
   cache: { phase1: boolean }
   params: Stage2Params
+}
+
+export interface Stage3Params {
+  palette_k: number
+  bg_simplify: number
+  fg_detail: number
+  shape_fit_tol: number
+  solid_line_gate: number
+  line_color_mode: LineColorMode
+  show_bg_shapes: boolean
+  show_fg_shapes: boolean
+  show_strokes: boolean
+}
+
+export interface PaletteSwatch {
+  hex: string
+  ratio: number
+}
+
+export interface IllustrationStats {
+  shape_count: { bg: number; fg: number }
+  palette_hex: string[]
+  shape_anchors: number
+  stroke_paths: number
+  retained_stroke_ratio: number
+  coverage_ratio: number
+  shape_coverage?: number
+  stage3_ms: number
+  primary_strokes: number
+  secondary_strokes: number
+}
+
+export interface IllustrationShape {
+  id: number
+  region: number
+  group: "bg" | "base" | "detail"
+  fill: string
+  z: number
+  commands: VectorCommand[]
+  anchors: VectorAnchor[]
+}
+
+export interface IllustrationResult {
+  image_id: string
+  svg_text: string
+  svg_url: string
+  filename: string
+  images: {
+    saliency_map: string
+    flat_regions: string
+    routed_strokes: string
+  }
+  palette: PaletteSwatch[]
+  illustration_stats: IllustrationStats
+  shapes: IllustrationShape[]
+  size: { width: number; height: number }
+  timings_ms: { stage3: number; stage2: number; phase1: number }
+  cache: { phase1: boolean; saliency?: boolean; routing?: boolean; regions?: boolean; geometry?: boolean }
+  params: Stage3Params
 }
 
 export interface ExtractResult {

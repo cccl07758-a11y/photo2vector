@@ -138,6 +138,28 @@ img { display: block; max-width: none; }
   color: #1a1408;
   font-weight: 650;
 }
+.stage-switch button.featured:not(.on) {
+  color: var(--ok);
+  box-shadow: inset 0 0 0 1px #3dce86;
+}
+.palette-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+.palette-chip {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  display: inline-block;
+}
+.cell .svg-stage,
+.cell .svg-stage svg {
+  width: 100%;
+  height: 100%;
+}
 .vector-stats { max-width: 420px; color: var(--text); }
 .legend-swatch {
   display: inline-block;

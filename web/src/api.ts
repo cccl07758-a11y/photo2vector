@@ -1,4 +1,14 @@
-import type { Diagnosis, ExtractResult, Phase1Params, Preset, Sample, Stage2Params, VectorizeResult } from "./types"
+import type {
+  Diagnosis,
+  ExtractResult,
+  IllustrationResult,
+  Phase1Params,
+  Preset,
+  Sample,
+  Stage2Params,
+  Stage3Params,
+  VectorizeResult,
+} from "./types"
 
 async function readError(response: Response): Promise<string> {
   try {
@@ -85,4 +95,27 @@ export async function vectorizeImage(
   })
   if (!response.ok) throw new Error(await readError(response))
   return (await response.json()) as VectorizeResult
+}
+
+export async function illustrateImage(
+  imageId: string,
+  phase1: Partial<Phase1Params>,
+  stage2: Stage2Params,
+  stage3: Stage3Params,
+  signal?: AbortSignal,
+): Promise<IllustrationResult> {
+  const response = await fetch("/api/stage3/illustrate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      image_id: imageId,
+      params: phase1,
+      auto_mode: false,
+      stage2,
+      stage3,
+    }),
+    signal,
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return (await response.json()) as IllustrationResult
 }

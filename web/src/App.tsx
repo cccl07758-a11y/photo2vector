@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { extractLines, fetchPresets, fetchSamples, uploadImage, vectorizeImage } from "./api"
+import { extractLines, fetchPresets, fetchSamples, illustrateImage, uploadImage, vectorizeImage } from "./api"
 import { DEFAULT_STAGE2, Microscope, Stage2Panel, SvgFrame, VectorWipe, statsLine, type MicroscopeHandle } from "./stage2"
+import { DEFAULT_STAGE3, ShapeMicroscope, Stage3Panel, illustrationLine, paintSvg } from "./stage3"
 import type {
   BandInk,
   Diagnosis,
   ExtractResult,
+  IllustrationResult,
   InkTint,
   Phase1Params,
   Preset,
   Sample,
   Stage2Params,
   Stage2View,
+  Stage3Params,
+  Stage3View,
   StageMode,
   VectorizeResult,
   ViewMode,
@@ -59,11 +63,15 @@ export default function App() {
   const [result, setResult] = useState<ExtractResult | null>(null)
   const [psLine, setPsLine] = useState<string>("")
   const [view, setView] = useState<ViewMode>("final")
-  const [stage, setStage] = useState<StageMode>(1)
+  const [stage, setStage] = useState<StageMode>(3)
   const [view2, setView2] = useState<Stage2View>("micro")
   const [stage2, setStage2] = useState<Stage2Params>(DEFAULT_STAGE2)
   const [vector, setVector] = useState<VectorizeResult | null>(null)
   const [pending2, setPending2] = useState(false)
+  const [view3, setView3] = useState<Stage3View>("svg")
+  const [stage3, setStage3] = useState<Stage3Params>(DEFAULT_STAGE3)
+  const [illustration, setIllustration] = useState<IllustrationResult | null>(null)
+  const [pending3, setPending3] = useState(false)
   const [wipeBitmap, setWipeBitmap] = useState<"line" | "photo">("line")
   const [wipe, setWipe] = useState(0.5)
   const [wipeSource, setWipeSource] = useState<WipeSource>("original")
@@ -201,18 +209,49 @@ export default function App() {
     }
   }, [stage, imageId, phaseKey, stageKey, lineKey])
 
+  const stage3Key = JSON.stringify(stage3)
+
+  useEffect(() => {
+    if (stage !== 3 || !imageId || !result || result.image_id !== imageId) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setPending3(true)
+      illustrateImage(imageId, result.params, stage2, stage3, controller.signal)
+        .then((payload) => {
+          setIllustration(payload)
+          setError("")
+        })
+        .catch((reason: unknown) => {
+          if (reason instanceof DOMException && reason.name === "AbortError") return
+          setError(reason instanceof Error ? reason.message : "插画生成失败")
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setPending3(false)
+        })
+    }, 90)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [stage, imageId, phaseKey, stageKey, stage3Key, lineKey, result, stage2, stage3])
+
   useEffect(() => {
     const node = viewportRef.current
     if (!node || !result) return
     const pad = 48
-    const frame = stage === 2 ? { width: result.stats.width, height: result.stats.height } : stageBox(view, result.stats.width, result.stats.height)
+    const frame =
+      stage === 3
+        ? stage3Box(view3, result.stats.width, result.stats.height)
+        : stage === 2
+          ? { width: result.stats.width, height: result.stats.height }
+          : stageBox(view, result.stats.width, result.stats.height)
     const scale = Math.min((node.clientWidth - pad) / frame.width, (node.clientHeight - pad) / frame.height, 1)
     setTransform({
       s: scale,
       x: (node.clientWidth - frame.width * scale) / 2,
       y: (node.clientHeight - frame.height * scale) / 2,
     })
-  }, [imageId, view, stage, result?.stats.width, result?.stats.height])
+  }, [imageId, view, view3, stage, result?.stats.width, result?.stats.height])
 
   useEffect(() => {
     const node = viewportRef.current
@@ -287,6 +326,17 @@ export default function App() {
     URL.revokeObjectURL(url)
   }
 
+  function exportIllustration() {
+    if (!illustration) return
+    const blob = new Blob([paintSvg(illustration.svg_text, stage3)], { type: "image/svg+xml" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = illustration.filename
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   function exportPng() {
     if (!result) return
     const link = document.createElement("a")
@@ -299,6 +349,50 @@ export default function App() {
     if (!result) return null
     const width = result.stats.width
     const height = result.stats.height
+    if (stage === 3) {
+      const svg = illustration ? paintSvg(illustration.svg_text, stage3) : ""
+      const shapes = illustration?.shapes ?? []
+      if (view3 === "wipe") {
+        return (
+          <div className="stage" style={{ width, height }}>
+            {svg ? <VectorWipe width={width} height={height} left={result.images.original} svg={svg} amount={wipe} onAmount={setWipe} /> : null}
+          </div>
+        )
+      }
+      if (view3 === "quad" && illustration) {
+        const cells = [
+          ["① 无AI主体分区场 S_fg", illustration.images.saliency_map],
+          ["② 以线筑坝色块分割", illustration.images.flat_regions],
+          ["③ 虚实分流深色线", illustration.images.routed_strokes],
+        ] as const
+        return (
+          <div className="grid2" style={{ width: width * 2 + 8, height: height * 2 + 8 }}>
+            {cells.map(([title, src]) => (
+              <div className="cell" key={title} style={{ width, height }}>
+                <img src={src} alt={title} draggable={false} />
+                <span>{title}</span>
+              </div>
+            ))}
+            <div className="cell" style={{ width, height }}>
+              {svg ? <SvgFrame svg={svg} /> : null}
+              <span>④ 最终矢量插画成稿</span>
+            </div>
+          </div>
+        )
+      }
+      if (view3 === "micro") {
+        return (
+          <div className="stage" style={{ width, height }}>
+            <ShapeMicroscope ref={microRef} shapes={shapes} width={width} height={height} />
+          </div>
+        )
+      }
+      return (
+        <div className="stage" style={{ width, height }}>
+          {svg ? <SvgFrame svg={svg} /> : null}
+        </div>
+      )
+    }
     if (stage === 2) {
       const paths = vector?.vector_data.paths ?? []
       const svg = vector?.svg_text ?? ""
@@ -392,7 +486,7 @@ export default function App() {
         )}
       </div>
     )
-  }, [result, view, wipe, wipeSource, psLine, underOpacity, tint, bandInk, colorOnPhoto, colorMix, stage, view2, vector, wipeBitmap])
+  }, [result, view, wipe, wipeSource, psLine, underOpacity, tint, bandInk, colorOnPhoto, colorMix, stage, view2, view3, vector, illustration, stage3, wipeBitmap])
 
   return (
     <div
@@ -411,14 +505,17 @@ export default function App() {
       <header className="toolbar">
         <div className="brand">
           <strong>Photo2Vector</strong>
-          <span>{stage === 1 ? "阶段一 · 线稿实验台" : "阶段二 · 矢量概括"}</span>
+          <span>{stage === 1 ? "阶段一 · 线稿实验台" : stage === 2 ? "阶段二 · 矢量线稿" : "阶段三 · 矢量插画"}</span>
         </div>
         <div className="stage-switch" role="tablist">
           <button type="button" className={stage === 1 ? "on" : ""} onClick={() => setStage(1)}>
             ① 位图提线
           </button>
           <button type="button" className={stage === 2 ? "on" : ""} onClick={() => setStage(2)}>
-            ② 矢量概括 · SVG
+            ② 矢量线稿
+          </button>
+          <button type="button" className={stage === 3 ? "on featured" : "featured"} onClick={() => setStage(3)}>
+            ③ 矢量插画 · SVG
           </button>
         </div>
         <div className="samples">
@@ -465,19 +562,28 @@ export default function App() {
             {result ? `${result.stats.width}×${result.stats.height}` : "—"}
           </span>
           <span className="badge">
-            {stage === 2 ? "矢量" : "Total"}{" "}
+            {stage === 1 ? "Total" : stage === 2 ? "矢量" : "插画"}{" "}
             <em>
-              {stage === 2
-                ? vector
-                  ? `${Math.round(vector.timings_ms.stage2)} ms`
+              {stage === 3
+                ? illustration
+                  ? `${Math.round(illustration.timings_ms.stage3)} ms`
                   : "—"
-                : result
-                  ? `${Math.round(result.timings_ms.total)} ms`
-                  : "—"}
+                : stage === 2
+                  ? vector
+                    ? `${Math.round(vector.timings_ms.stage2)} ms`
+                    : "—"
+                  : result
+                    ? `${Math.round(result.timings_ms.total)} ms`
+                    : "—"}
             </em>
           </span>
           {stage === 2 && vector && <span className="badge vector-stats">{statsLine(vector.vector_stats)}</span>}
-          {stage === 2 ? (
+          {stage === 3 && illustration && <span className="badge vector-stats">{illustrationLine(illustration.illustration_stats)}</span>}
+          {stage === 3 ? (
+            <button className="export vector" type="button" disabled={!illustration} onClick={exportIllustration}>
+              ⬇ 导出分层插画 .svg
+            </button>
+          ) : stage === 2 ? (
             <button className="export vector" type="button" disabled={!vector} onClick={exportSvg}>
               ⬇ 导出可编辑 .svg
             </button>
@@ -507,7 +613,9 @@ export default function App() {
             }))
             return
           }
-          if (stage !== 2 || (view2 !== "micro" && view2 !== "overlay")) return
+          if (stage === 3 && view3 !== "micro") return
+          if (stage === 2 && view2 !== "micro" && view2 !== "overlay") return
+          if (stage === 1) return
           const node = viewportRef.current
           if (!node) return
           const rect = node.getBoundingClientRect()
@@ -522,9 +630,11 @@ export default function App() {
           if (!result || !viewportRef.current) return
           const node = viewportRef.current
           const frame =
-            stage === 2
-              ? { width: result.stats.width, height: result.stats.height }
-              : stageBox(view, result.stats.width, result.stats.height)
+            stage === 3
+              ? stage3Box(view3, result.stats.width, result.stats.height)
+              : stage === 2
+                ? { width: result.stats.width, height: result.stats.height }
+                : stageBox(view, result.stats.width, result.stats.height)
           const scale = Math.min((node.clientWidth - 48) / frame.width, (node.clientHeight - 48) / frame.height, 1)
           setTransform({
             s: scale,
@@ -533,10 +643,23 @@ export default function App() {
           })
         }}
       >
-        {(pending || pending2) && <div className="busy" />}
+        {(pending || pending2 || pending3) && <div className="busy" />}
         {error && <div className="error">{error}</div>}
         <div className="float top">
-          {stage === 2
+          {stage === 3
+            ? (
+                [
+                  ["svg", "插画成稿 (SVG)"],
+                  ["wipe", "原图 vs 插画卷帘"],
+                  ["quad", "叠纸解剖四宫格"],
+                  ["micro", "色块锚点显微镜 (Paper.js)"],
+                ] as const
+              ).map(([id, label]) => (
+                <button key={id} type="button" className={view3 === id ? "on" : ""} onClick={() => setView3(id)}>
+                  {label}
+                </button>
+              ))
+            : stage === 2
             ? (
                 [
                   ["svg", "矢量成稿 (SVG)"],
@@ -560,6 +683,27 @@ export default function App() {
             </button>
           ))}
         </div>
+        {stage === 3 && view3 === "svg" && (
+          <div className="float bottom">
+            <button type="button" className={stage3.show_bg_shapes ? "on" : ""} onClick={() => setStage3((current) => ({ ...current, show_bg_shapes: !current.show_bg_shapes }))}>
+              👁 背景色块
+            </button>
+            <button type="button" className={stage3.show_fg_shapes ? "on" : ""} onClick={() => setStage3((current) => ({ ...current, show_fg_shapes: !current.show_fg_shapes }))}>
+              👁 主体色块
+            </button>
+            <button type="button" className={stage3.show_strokes ? "on" : ""} onClick={() => setStage3((current) => ({ ...current, show_strokes: !current.show_strokes }))}>
+              👁 插画线稿
+            </button>
+          </div>
+        )}
+        {stage === 3 && view3 === "micro" && (
+          <div className="float bottom">
+            <span><i className="legend-swatch curve" />色块轮廓</span>
+            <span><i className="legend-swatch smooth" />平滑</span>
+            <span><i className="legend-swatch cusp" />尖角</span>
+            <span ref={probeRef}>悬停色块锚点可看类型与坐标</span>
+          </div>
+        )}
         {stage === 2 && (view2 === "micro" || view2 === "overlay") && (
           <div className="float bottom">
             <span><i className="legend-swatch line" />直线</span>
@@ -681,7 +825,15 @@ export default function App() {
 
       <aside className="panel">
         {sample && <p className="hint">{sample.scene}</p>}
-        {stage === 2 ? (
+        {stage === 3 ? (
+          <Stage3Panel
+            params={stage3}
+            palette={illustration?.palette ?? []}
+            stats={illustration?.illustration_stats ?? null}
+            onChange={(partial) => setStage3((current) => ({ ...current, ...partial }))}
+            onBack={() => setStage(2)}
+          />
+        ) : stage === 2 ? (
           <Stage2Panel
             params={stage2}
             stats={vector?.vector_stats ?? null}
@@ -970,6 +1122,11 @@ function heavySignature(params: Phase1Params) {
 
 function stageBox(view: ViewMode, width: number, height: number) {
   if (view === "matrix") return { width: width * 3 + 16, height: height * 2 + 8 }
+  return { width, height }
+}
+
+function stage3Box(view: Stage3View, width: number, height: number) {
+  if (view === "quad") return { width: width * 2 + 8, height: height * 2 + 8 }
   return { width, height }
 }
 
