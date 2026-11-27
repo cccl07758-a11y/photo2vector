@@ -1,0 +1,158 @@
+AO PS
+AO Polar Stereographic
+AO extrapolation
+AO removal strength:
+Baking ambient occlusion map...
+Building system...
+Color conversion
+Highlight
+Highlights suppressed in 
+Highlights suppression:
+HighlightsCorrection
+Removing lighting...
+Removing masks...
+Shadow
+Shadow Color
+Shadow Scale Map
+Shadow brush color
+Shadow masks baked in 
+Shadow samples empty
+Shadow scale map 
+ShadowAmbient
+ShadowCompareFunc
+ShadowCompareFuncEEE
+ShadowCompareFuncEvEE
+ShadowComparison
+ShadowE
+ShadowENS_6ShadowE
+ShadowMatting;493;26;;
+ShadowMatting;493;2;;
+ShadowScale
+ShadowTextureMode
+ShadowTextureModeEEE
+ShadowTextureModeEvEE
+Shadows
+Shadows (Preview)
+Teleport map calculated in 
+Teleport map inconsistent
+TeleportMap;193;26;;
+TeleportMap;193;2;;
+dominant color
+guided image matching.
+guided_matching
+guided_matching_neighbors
+inpaint
+inpaint.cpp;(anonymous namespace)::downscale;31;9;;
+inpaint.cpp;(anonymous namespace)::downscale;35;13;;
+inpaint.cpp;(anonymous namespace)::downscale;35;28;;
+inpaint.cpp;(anonymous namespace)::optimizeImage;164;1;;
+inpaint.cpp;(anonymous namespace)::optimizeImage;164;25;;
+inpaint.cpp;(anonymous namespace)::optimizeImage;224;1;;
+inpaint.cpp;(anonymous namespace)::optimizeImage;224;25;;
+inpaint.cpp;(anonymous namespace)::upscaleWithNewSource;107;1;;
+inpaint.cpp;(anonymous namespace)::upscaleWithNewSource;107;25;;
+inpaint/inpaint.cpp;(anonymous namespace)::downscale;31;9;;
+inpaint/inpaint.cpp;(anonymous namespace)::downscale;35;13;;
+inpaint/inpaint.cpp;(anonymous namespace)::downscale;35;28;;
+inpaint/inpaint.cpp;(anonymous namespace)::optimizeImage;164;1;;
+inpaint/inpaint.cpp;(anonymous namespace)::optimizeImage;164;25;;
+inpaint/inpaint.cpp;(anonymous namespace)::optimizeImage;224;1;;
+inpaint/inpaint.cpp;(anonymous namespace)::optimizeImage;224;25;;
+inpaint/inpaint.cpp;(anonymous namespace)::upscaleWithNewSource;107;1;;
+inpaint/inpaint.cpp;(anonymous namespace)::upscaleWithNewSource;107;25;;
+inpaint/nearest_neighbour_field.cpp;NearestNeighborField<signed char>::NearestNeighborField;105;1;;
+inpaint/nearest_neighbour_field.cpp;NearestNeighborField<signed char>::NearestNeighborField;105;25;;
+inpaint/nearest_neighbour_field.cpp;NearestNeighborField<signed char>::NearestNeighborField;44;1;;
+inpaint/nearest_neighbour_field.cpp;NearestNeighborField<signed char>::NearestNeighborField;44;25;;
+inpaint/nearest_neighbour_field.cpp;NearestNeighborField<signed char>::NearestNeighborField;79;1;;
+inpaint/nearest_neighbour_field.cpp;NearestNeighborField<signed char>::NearestNeighborField;79;25;;
+inpaintCG: building solver...
+inpaintCG: finding interesting pixels...
+inpaintCG: images split in 
+inpaintCG: interesting pixels found in 
+inpaintCG: merged in 
+inpaintCG: merging...
+inpaintCG: obtaining springs...
+inpaintCG: solved in 
+inpaintCG: solver built in 
+inpaintCG: solving...
+inpaintCG: splitting images...
+inpaintCG: springs obtained in 
+inpaintCG;527;27;;
+inpaintCG;527;3;;
+inpaintCholesky;464;27;;
+inpaintCholesky;464;3;;
+inpaint_eroded_light_mask.png
+inpaint_exclude_mask.png
+inpaint_exclude_mask_
+inpaint_fill_mask.png
+inpaint_fill_mask_
+inpaint_fill_mask_2.png
+inpaint_in_
+inpaint_out_
+inpaint_penumbra.png
+inpaint_penumbra_exclude_mask.png
+inpaint_penumbra_fill_mask.png
+inpaint_x0_
+inpainted in 
+inpainted_ at line 353
+inpainter.cpp;OrthomosaicInpainter::applyInpaintType;387;33;;
+inpainter.cpp;OrthomosaicInpainter::applyInpaintType;387;9;;
+inpainter.cpp;OrthomosaicInpainter::prepareInpaintingPatches;308;1;;
+inpainter.cpp;OrthomosaicInpainter::prepareInpaintingPatches;308;53;;
+inpainting.cpp;(anonymous namespace)::inpaintCG;527;27;;
+inpainting.cpp;(anonymous namespace)::inpaintCG;527;3;;
+inpainting.cpp;(anonymous namespace)::inpaintCholesky;464;27;;
+inpainting.cpp;(anonymous namespace)::inpaintCholesky;464;3;;
+inpainting.png
+latlong
+latlong map
+penumbra (
+penumbra...
+penumbra.png
+penumbra_after_max_filter.png
+penumbra_before_max_filter.png
+penumbra_exclude_mask.png
+penumbra_fill_mask.png
+penumbra_inpainted_ at line 353
+penumbra_mask_
+penumbra_mask_ at line 324
+penumbra_mask_ at line 356
+penumbra_width
+scale_full.png
+scale_full_ at line 430
+scale_full_ at line 480
+scale_full_ at line 516
+scale_full_ at line 649
+scale_full_before_inpainting.png
+scale_full_empty_mask.png
+scale_full_materials.png
+scale_full_matting.png
+scale_full_suppressed.png
+scale_full_umbra_penumbra.png
+scale_strip.cpp;(anonymous namespace)::getImageEdges;124;4;;
+scale_strip.cpp;(anonymous namespace)::getImageEdges;132;20;;
+scale_strip.cpp;(anonymous namespace)::getImageEdges;132;5;;
+scale_strip_ at line 390
+scale_strip_edges.png
+scale_strip_rough.png
+umbra (
+umbra dilated
+umbra inpainted in 
+umbra...
+umbra.png
+umbraFast;320;4;;
+umbraFast;346;20;;
+umbraFast;346;5;;
+umbraFast;449;5;;
+umbra_after_max_filter.png
+umbra_before_max_filter.png
+umbra_exclude_mask.png
+umbra_fill_mask.png
+umbra_inpainted_ at line 353
+umbra_mask_
+umbra_mask_ at line 324
+umbra_mask_ at line 355
+umbra_mask_ at line 356
+umbra_penumbra.png
+umbra_width

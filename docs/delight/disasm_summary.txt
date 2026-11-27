@@ -1,0 +1,10 @@
+gamma: instructions_in_range=62 floats=[] strs=[] -> gamma.s
+invGamma: instructions_in_range=78 floats=[] strs=[] -> invGamma.s
+DPPS_AO_block: instructions_in_range=336 floats=[] strs=[] -> DPPS_AO_block.s
+top_delight_color: instructions_in_range=5468 floats=['0', '1.52261877e+19', '1.76665574e+22', '2.02249429e+20'] strs=['Color conversion', '/mesh/atlas/uv_atlas/uv_atlas.h;uv::UVAtlasGenerator::getMesh;28;4;;', '/mesh/atlas/uv_atlas/uv_atlas.h;uv::UVAtlasGenerator::getMesh;28;4;;', 'Color conversion', 'delighting done', 'Obtaining dominant color', 'Calculating latlong map', 'atlas.h;uv::UVAtlasGenerator::getMesh;28;4;;'] -> top_delight_color.s
+remove_cast_shadows: instructions_in_range=128 floats=[] strs=[] -> remove_cast_shadows.s
+remove_shading: instructions_in_range=128 floats=[] strs=['Baking ambient occlusion map...', 'Removing lighting...'] -> remove_shading.s
+guided_filter: instructions_in_range=128 floats=[] strs=[] -> guided_filter.s
+inpaintCholesky: instructions_in_range=128 floats=[] strs=['Building system...'] -> inpaintCholesky.s
+inpaintCG: instructions_in_range=128 floats=[] strs=['inpaintCG: finding interesting pixels...', 'inpaintCG: interesting pixels found in ', ' sec.'] -> inpaintCG.s
+image_divide: instructions_in_range=128 floats=[] strs=[] -> image_divide.s

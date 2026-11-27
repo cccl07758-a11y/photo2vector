@@ -26,3 +26,7 @@ outputs/
 .env
 .env.*
 !.env.example
+
+# Local reverse-engineering dumps (commercial binary and raw disassembly)
+docs/delight/artifacts/
+*.arm64
